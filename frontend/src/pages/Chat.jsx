@@ -9,10 +9,9 @@ import axiosInstance from "../api/axiosInstance";
 import { toast } from "react-toastify";
 import { MessageSquare } from 'lucide-react';
 
-// --- Main Chat Page Component (acts as a router) ---
+// --- Main Chat Page Component ---
 const Chat = () => {
     const { roomId } = useParams();
-
     return (
         <div className="min-h-screen flex bg-slate-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
             <Sidebar />
@@ -28,8 +27,7 @@ const Chat = () => {
 
 export default Chat;
 
-
-// --- Sub-component for the CHAT LIST (Dashboard) ---
+// --- Chat List (Dashboard) ---
 function ChatList() {
     const [chatRooms, setChatRooms] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -78,7 +76,7 @@ function ChatList() {
     );
 }
 
-// --- Sub-component for a SINGLE CHAT ROOM ---
+// --- Chat Room Component ---
 function ChatRoom({ roomId }) {
     const { user, token } = useAuth();
     const [messages, setMessages] = useState([]);
@@ -86,6 +84,7 @@ function ChatRoom({ roomId }) {
     const [isLoading, setIsLoading] = useState(true);
     const messagesEndRef = useRef(null);
 
+    // Fetch messages
     const fetchMessages = useCallback(async () => {
         if (!roomId || !token) return;
         setIsLoading(true);
@@ -101,51 +100,70 @@ function ChatRoom({ roomId }) {
         }
     }, [roomId, token]);
 
-    useEffect(() => {
-        fetchMessages();
-    }, [fetchMessages]);
+    useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
+    // Subscribe to Realtime
     useEffect(() => {
-        if (!roomId) return;
-        const channel = supabase.channel(`chat-room-${roomId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` },
-            async (payload) => {
-                // To avoid fetching the profile again, we can check if the sender is the current user
-                if (payload.new.sender_id === user.id) return;
-                const { data: sender } = await supabase.from('profiles').select('id, full_name').eq('id', payload.new.sender_id).single();
-                setMessages(prev => [...prev, { ...payload.new, sender }]);
-            }
-        ).subscribe();
-        return () => supabase.removeChannel(channel);
-    }, [roomId, user.id]);
+        if (!roomId || !user) return;
+        let subscribed = true;
 
+        const channel = supabase
+            .channel(`chat-room-${roomId}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` },
+                async (payload) => {
+                    if (!subscribed) return;
+                    if (payload.new.sender_id === user.id) return; // skip own messages
+                    const { data: sender } = await supabase.from('profiles').select('id, full_name').eq('id', payload.new.sender_id).single();
+                    setMessages(prev => [...prev, { ...payload.new, sender }]);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            subscribed = false;
+            supabase.removeChannel(channel);
+        };
+    }, [roomId, user]);
+
+    // Send message
     const sendMessage = useCallback(async (e) => {
         e.preventDefault();
         if (!input.trim()) return;
+
         const tempId = Math.random();
         const newMessage = { id: tempId, content: input.trim(), sender: { id: user.id }, sent_at: new Date().toISOString() };
         setMessages(prev => [...prev, newMessage]);
         const currentInput = input;
         setInput("");
+
         try {
             await axiosInstance.post(`/chat/${roomId}/messages`, { content: currentInput.trim() }, { headers: { Authorization: `Bearer ${token}` } });
         } catch (error) {
             toast.error("Message failed to send.");
-            setInput(currentInput); // Restore input on failure
+            setInput(currentInput);
             setMessages(prev => prev.filter(msg => msg.id !== tempId));
         }
-    }, [input, roomId, token, user.id]);
+    }, [input, roomId, token, user]);
 
     useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
     return (
         <div className="w-full flex flex-col h-full">
             <div className="flex-1 bg-white dark:bg-slate-800 rounded-xl shadow-md p-4 flex flex-col overflow-y-auto">
-                {isLoading ? <p className="m-auto text-slate-500">Loading chat history...</p> : messages.map((msg) => (
-                    <div key={msg.id} className={`mb-3 px-4 py-2 rounded-2xl max-w-xs md:max-w-md break-words ${msg.sender?.id === user.id ? "bg-indigo-500 text-white self-end" : "bg-gray-100 dark:bg-slate-700 self-start"}`}>
-                        <strong className="block text-sm opacity-70">{msg.sender?.id === user.id ? "You" : msg.sender?.full_name || '...'}</strong>
-                        {msg.content}
-                    </div>
-                ))}
+                {isLoading ? (
+                    <p className="m-auto text-slate-500">Loading chat history...</p>
+                ) : messages.length === 0 ? (
+                    <p className="m-auto text-gray-500">No messages yet.</p>
+                ) : (
+                    messages.map((msg) => (
+                        <div key={msg.id} className={`mb-3 px-4 py-2 rounded-2xl max-w-xs md:max-w-md break-words ${msg.sender?.id === user.id ? "bg-indigo-500 text-white self-end" : "bg-gray-100 dark:bg-slate-700 self-start"}`}>
+                            <strong className="block text-sm opacity-70">{msg.sender?.id === user.id ? "You" : msg.sender?.full_name || '...'}</strong>
+                            {msg.content}
+                        </div>
+                    ))
+                )}
                 <div ref={messagesEndRef}></div>
             </div>
             <form onSubmit={sendMessage} className="mt-4 flex gap-2 items-center">
