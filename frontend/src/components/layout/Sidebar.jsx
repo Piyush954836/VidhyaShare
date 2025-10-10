@@ -32,16 +32,16 @@ const Sidebar = () => {
     <>
       {/* Mobile hamburger button */}
       <button
-        className="md:hidden fixed top-4 left-4 z-50 p-2 rounded-md bg-white dark:bg-gray-900 shadow-md"
+        className="md:hidden fixed top-4 left-4 z-[60] p-2 rounded-md bg-white dark:bg-gray-900 shadow-md"
         onClick={() => setIsOpen(true)}
       >
         <HiMenu size={24} />
       </button>
 
-      {/* Overlay */}
+      {/* Overlay (only visible on mobile when sidebar is open) */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/30 z-40 md:hidden"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[50] md:hidden"
           onClick={() => setIsOpen(false)}
         ></div>
       )}
@@ -49,20 +49,22 @@ const Sidebar = () => {
       {/* Sidebar */}
       <aside
         className={`
-          fixed top-0 left-0 z-30 w-64 h-full p-6 bg-gradient-to-b from-white to-gray-50 dark:from-gray-900 dark:to-gray-800
-          transform transition-transform duration-300 ease-in-out
-          ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
-          {/* ✨ FIXED: Removed 'md:static' to make the sidebar sticky on desktop */}
+          fixed top-0 left-0 h-full w-64 p-6 
+          bg-gradient-to-b from-white to-gray-50 dark:from-gray-900 dark:to-gray-800 
+          shadow-lg transform transition-transform duration-300 ease-in-out
+          z-[55]
+          ${isOpen ? "translate-x-0" : "-translate-x-full"} 
+          md:translate-x-0 md:relative md:z-auto
         `}
       >
-        {/* Close button for mobile */}
+        {/* Close button (mobile only) */}
         <div className="flex justify-end md:hidden mb-4">
           <button onClick={() => setIsOpen(false)}>
             <HiX size={24} />
           </button>
         </div>
 
-        {/* Links container with vertical scrolling if needed */}
+        {/* Scrollable Links */}
         <div className="h-full overflow-y-auto pb-10">
           <ul className="space-y-4">
             {links.map((link) => {
@@ -90,17 +92,14 @@ const Sidebar = () => {
             })}
           </ul>
 
+          {/* Admin section */}
           {user && user.role === "admin" && (
             <>
               <hr className="my-6 border-gray-200 dark:border-gray-700" />
-
-              {/* Admin section heading */}
               <div className="px-4 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 Admin Tools
               </div>
-
               <ul className="space-y-2">
-                {/* Link to Manage Skills */}
                 <li>
                   <Link
                     to="/admin"
@@ -114,8 +113,6 @@ const Sidebar = () => {
                     Manage Skills
                   </Link>
                 </li>
-
-                {/* Link to Manage Tests */}
                 <li>
                   <Link
                     to="/admin/tests"
