@@ -14,19 +14,45 @@ export const getMyLearning = async (req, res) => {
                     id,
                     title,
                     skill:skills (name),
-                    teacher:profiles (full_name, avatar_url)
+                    teacher:profiles (full_name, avatar_url),
+                    topics (
+                    id,
+                    title,
+                    live_sessions (
+                        id,
+                        title,
+                        scheduled_at,
+                        status
+                    )
+                    )
                 )
-            `)
+                `)
             .eq('student_id', student_id)
             .order('enrolled_at', { ascending: false });
 
         if (error) throw error;
-        res.status(200).json(data);
+
+        const formatted = data.map(item => {
+            const sessions = item.course.live_sessions || [];
+            const upcomingOrLive = sessions.find(
+                s => ['live', 'scheduled'].includes(s.status)
+            );
+            return {
+                ...item,
+                course: {
+                    ...item.course,
+                    nextSession: upcomingOrLive || null
+                }
+            };
+        });
+
+        res.status(200).json(formatted);
     } catch (err) {
         console.error('[ERROR] Fetching "My Learning" courses:', err);
         res.status(500).json({ error: 'Failed to fetch your enrolled courses.' });
     }
 };
+
 
 // --- GET INCOMING ENROLLMENT REQUESTS FOR THE LOGGED-IN TEACHER ---
 export const getStudentEnrollments = async (req, res) => {

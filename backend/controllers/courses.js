@@ -44,6 +44,12 @@ export const getMyCourses = async (req, res) => {
                 description,
                 is_verified,
                 skill:skills ( name )
+                live_sessions (
+                    id,
+                    status,
+                    scheduled_at,
+                    subtopics
+                )
             `)
             .eq('teacher_id', teacher_id);
 
@@ -110,10 +116,21 @@ export const getTopicsForCourse = async (req, res) => {
     try {
         // First, get all topics for the course
         const { data: topics, error: topicsError } = await supabase
-            .from('topics')
-            .select('id, title, topic_order')
-            .eq('course_id', courseId)
-            .order('topic_order', { ascending: true });
+                .from('topics')
+                .select(`
+                    id,
+                    title,
+                    topic_order,
+                    live_sessions (
+                    id,
+                    subtopics,
+                    status,
+                    scheduled_at
+                    )
+                `)
+                .eq('course_id', courseId)
+                .order('topic_order', { ascending: true });
+
 
         if (topicsError) throw topicsError;
 
@@ -219,10 +236,21 @@ export const getCourseDetails = async (req, res) => {
                 *,
                 teacher:profiles (full_name, avatar_url),
                 skill:skills (name, category),
-                topics (id, title, topic_order)
+                topics (
+                id, 
+                title, 
+                topic_order,
+                live_sessions (
+                    id,
+                    status,
+                    scheduled_at,
+                    subtopics
+                )
+                )
             `)
             .eq('id', courseId)
             .single();
+
 
         if (error) throw error;
         if (!course) return res.status(404).json({ error: 'Course not found.' });

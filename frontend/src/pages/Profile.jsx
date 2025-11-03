@@ -19,7 +19,6 @@ import QuizGenerator from "../components/QuizGenerator";
 import PracticalTestModal from "../components/PracticalTestModal";
 import LiveSession from "./LiveSession";
 
-// --- Reusable Countdown Timer Component ---
 const CountdownTimer = ({ expiryTimestamp }) => {
   const calculateTimeLeft = useCallback(() => {
     const difference = +new Date(expiryTimestamp) - +new Date();
@@ -27,7 +26,7 @@ const CountdownTimer = ({ expiryTimestamp }) => {
     if (difference > 0) {
       timeLeft = {
         hours: Math.floor(difference / (1000 * 60 * 60)),
-        minutes: Math.floor((difference / 1000 / 60) % 60),
+        minutes: Math.floor((difference / (1000 * 60)) % 60),
         seconds: Math.floor((difference / 1000) % 60),
       };
     }
@@ -35,16 +34,12 @@ const CountdownTimer = ({ expiryTimestamp }) => {
   }, [expiryTimestamp]);
 
   const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
-
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setTimeLeft(calculateTimeLeft());
-    }, 1000);
+    const timer = setTimeout(() => setTimeLeft(calculateTimeLeft()), 1000);
     return () => clearTimeout(timer);
-  });
+  }, [calculateTimeLeft, timeLeft]);
 
   const formatTime = (value) => String(value).padStart(2, "0");
-
   return (
     <div className="w-full mt-4 flex items-center justify-center gap-2 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 font-bold py-2 px-4 rounded-lg">
       <Clock className="w-4 h-4" />
@@ -60,142 +55,15 @@ const CountdownTimer = ({ expiryTimestamp }) => {
   );
 };
 
-// --- Create Course Modal Component ---
-const CreateCourseModal = ({ onClose, onCourseCreated }) => {
+function ScheduleSessionModal({
+  topicId,
+  topicTitle,
+  courseId,
+  onClose,
+  onSessionCreated,
+}) {
   const { token } = useAuth();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [skillId, setSkillId] = useState("");
-  const [availableSkills, setAvailableSkills] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    const fetchSkills = async () => {
-      try {
-        const response = await axiosInstance.get("/skills", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setAvailableSkills(response.data || []);
-      } catch (error) {
-        toast.error("Could not load available skills.");
-      }
-    };
-    fetchSkills();
-  }, [token]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!title || !skillId) {
-      toast.warn("Please select a skill and provide a title.");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const response = await axiosInstance.post(
-        "/courses",
-        {
-          skill_id: parseInt(skillId),
-          title,
-          description,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      toast.success(response.data.message);
-      onCourseCreated();
-    } catch (error) {
-      toast.error(error.response?.data?.error || "Failed to create course.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl w-full max-w-lg text-gray-900 dark:text-gray-100">
-        <div className="flex justify-between items-center mb-4 border-b pb-3 dark:border-gray-600">
-          <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-500">
-            Create New Course
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
-          >
-            <X size={24} />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="skill" className="block mb-2 font-medium">
-              Select Skill to Teach
-            </label>
-            <select
-              id="skill"
-              value={skillId}
-              onChange={(e) => setSkillId(e.target.value)}
-              className="w-full p-3 border-2 rounded-md bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 focus:border-indigo-500"
-            >
-              <option value="" disabled>
-                -- Select a Skill --
-              </option>
-              {availableSkills.map((skill) => (
-                <option key={skill.id} value={skill.id}>
-                  {skill.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="title" className="block mb-2 font-medium">
-              Course Title
-            </label>
-            <input
-              type="text"
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g., The Ultimate Guide to JavaScript"
-              className="w-full p-3 border-2 rounded-md bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 focus:border-indigo-500"
-            />
-          </div>
-          <div>
-            <label htmlFor="description" className="block mb-2 font-medium">
-              Course Description (Optional)
-            </label>
-            <textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows="3"
-              placeholder="A brief summary of what students will learn."
-              className="w-full p-3 border-2 rounded-md bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 focus:border-indigo-500"
-            ></textarea>
-          </div>
-          <div className="flex justify-end gap-4 pt-4">
-            <Button
-              type="button"
-              onClick={onClose}
-              className="bg-gray-200 dark:bg-gray-600 text-black dark:text-white"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="bg-gradient-to-r from-indigo-500 to-purple-500"
-            >
-              {isSubmitting ? "Creating..." : "Create Course"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-// ✨ --- NEW: Schedule Session Modal Component (was missing) ---
-function ScheduleSessionModal({ courseId, onClose, onSessionCreated }) {
-  const { token } = useAuth();
-  const [title, setTitle] = useState("");
+  const [subtopicsInput, setSubtopicsInput] = useState("");
   const [sessionType, setSessionType] = useState("group");
   const [scheduledAt, setScheduledAt] = useState("");
   const [duration, setDuration] = useState(30);
@@ -204,25 +72,36 @@ function ScheduleSessionModal({ courseId, onClose, onSessionCreated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title || !scheduledAt) {
-      toast.warn("Please provide a title and a scheduled time.");
+    const subtopics = subtopicsInput
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => !!s);
+    const title =
+      subtopics.length > 0
+        ? `Session on ${topicTitle}: ${subtopics.join(", ")}`
+        : `Session on ${topicTitle}`;
+
+    if (!topicId || !subtopics.length || !scheduledAt) {
+      toast.warn("Please provide at least one subtopic and a scheduled time.");
       return;
     }
+
     setIsSubmitting(true);
     try {
       await axiosInstance.post(
         "/sessions",
         {
           course_id: courseId,
-          title,
+          topic_id: topicId,
+          subtopics,
           session_type: sessionType,
           scheduled_at: new Date(scheduledAt).toISOString(),
           duration_minutes: parseInt(duration),
           max_students: sessionType === "group" ? parseInt(maxStudents) : 1,
+          title,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
       toast.success("Live session scheduled!");
       onSessionCreated();
     } catch (error) {
@@ -237,7 +116,7 @@ function ScheduleSessionModal({ courseId, onClose, onSessionCreated }) {
       <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl w-full max-w-lg">
         <div className="flex justify-between items-center mb-4 border-b pb-3 dark:border-gray-600">
           <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-teal-500">
-            Schedule Live Session
+            Schedule Live Session for <b>{topicTitle}</b>
           </h2>
           <button
             onClick={onClose}
@@ -249,17 +128,19 @@ function ScheduleSessionModal({ courseId, onClose, onSessionCreated }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
-              htmlFor="session-title"
+              htmlFor="subtopics"
               className="block text-sm font-medium text-gray-700 dark:text-gray-300"
             >
-              Title
+              Subtopics (comma-separated)
             </label>
             <input
-              id="session-title"
+              id="subtopics"
               type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              value={subtopicsInput}
+              onChange={(e) => setSubtopicsInput(e.target.value)}
+              placeholder="e.g. Introduction, Advanced Examples"
               className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600"
+              required
             />
           </div>
           <div>
@@ -275,6 +156,7 @@ function ScheduleSessionModal({ courseId, onClose, onSessionCreated }) {
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
               className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600"
+              required
             />
           </div>
           <div>
@@ -350,11 +232,8 @@ function ScheduleSessionModal({ courseId, onClose, onSessionCreated }) {
   );
 }
 
-// --- Main Profile Page Component ---
 const Profile = () => {
   const { user, token, refreshUser } = useAuth();
-
-  // --- State Management ---
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
@@ -373,7 +252,12 @@ const Profile = () => {
   const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
   const [activeSession, setActiveSession] = useState(null);
 
-  // --- Data Fetching ---
+  // For topics and their sessions
+  const [topics, setTopics] = useState([]);
+  const [isLoadingTopics, setIsLoadingTopics] = useState(false);
+  const [sessionModal, setSessionModal] = useState(null); // {topicId, topicTitle} or null
+  const [topicSessions, setTopicSessions] = useState({}); // Maps topicId to array of sessions
+
   const fetchProfileData = useCallback(async () => {
     if (!user || !token) return;
     try {
@@ -408,17 +292,61 @@ const Profile = () => {
     }
   }, [user, token]);
 
+  // Fetch topics for selected course
+  useEffect(() => {
+    async function fetchTopics() {
+      if (!selectedCourse || !token) return;
+      setIsLoadingTopics(true);
+      try {
+        const res = await axiosInstance.get(
+          `/courses/${selectedCourse.id}/topics`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        setTopics(res.data || []);
+      } catch {
+        toast.error("Could not load topics");
+      }
+      setIsLoadingTopics(false);
+    }
+    if (selectedCourse) fetchTopics();
+  }, [selectedCourse, token]);
+
+  // Fetch sessions PER TOPIC
+  const fetchTopicSessions = useCallback(async () => {
+    if (!selectedCourse || !token || !topics.length) return;
+    const sessionsMap = {};
+    for (const topic of topics) {
+      try {
+        // Assumes backend route returns ALL sessions for this topic (adjust as needed)
+        const res = await axiosInstance.get(
+          `/sessions/topic?topic_id=${topic.id}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        sessionsMap[topic.id] = res.data || [];
+      } catch {
+        sessionsMap[topic.id] = [];
+      }
+    }
+    setTopicSessions(sessionsMap);
+  }, [selectedCourse, topics, token]);
+
+  useEffect(() => {
+    if (selectedCourse && topics.length) fetchTopicSessions();
+  }, [selectedCourse, topics, fetchTopicSessions]);
+
   useEffect(() => {
     fetchProfileData();
   }, [fetchProfileData]);
-
   useEffect(() => {
     if (view === "teaching") {
       fetchCourses();
     }
   }, [view, fetchCourses]);
 
-  // --- Event Handlers ---
   const handleSave = async (e) => {
     e.preventDefault();
     setUploading(true);
@@ -447,6 +375,7 @@ const Profile = () => {
       setUploading(false);
     }
   };
+
   const handleStartVerification = (skill) => {
     setIsQuizOpen(true);
     setSelectedSkillForQuiz(skill);
@@ -465,6 +394,13 @@ const Profile = () => {
     setSelectedSkillForTest(null);
     fetchProfileData();
   };
+  const openScheduleSessionModal = (topic) =>
+    setSessionModal({ topicId: topic.id, topicTitle: topic.title });
+  const closeScheduleSessionModal = () => setSessionModal(null);
+  const handleSessionCreated = () => {
+    closeScheduleSessionModal();
+    fetchTopicSessions();
+  };
 
   if (!user) {
     return (
@@ -474,7 +410,6 @@ const Profile = () => {
     );
   }
 
-  // --- RENDER LOGIC ---
   return (
     <>
       {activeSession && (
@@ -515,9 +450,9 @@ const Profile = () => {
             <h1 className="text-4xl md:text-5xl font-bold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500">
               Profile
             </h1>
-
             {!editing ? (
               <div className="space-y-12">
+                {/* Profile Card */}
                 <div className="flex flex-col md:flex-row items-center gap-8 p-6 bg-white dark:bg-slate-800 rounded-2xl shadow-lg">
                   <img
                     key={profilePic}
@@ -548,7 +483,7 @@ const Profile = () => {
                     </div>
                   </div>
                 </div>
-
+                {/* Skill/Teaching Tabs */}
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg">
                   <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
                     <button
@@ -572,7 +507,7 @@ const Profile = () => {
                       <BookOpen className="w-5 h-5" /> Teaching
                     </button>
                   </div>
-
+                  {/* Skills Tab */}
                   {view === "skills" ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                       {skills.map((s) => {
@@ -644,21 +579,137 @@ const Profile = () => {
                       })}
                     </div>
                   ) : selectedCourse ? (
-                    <CourseEditor
-                      course={selectedCourse}
-                      onBack={() => {
-                        setSelectedCourse(null);
-                        fetchCourses();
-                      }}
-                      onStartSession={(session) => setActiveSession(session)}
-                    />
+                    <>
+                      <button
+                        onClick={() => setSelectedCourse(null)}
+                        className="flex items-center gap-2 text-indigo-600 font-semibold mb-6 hover:underline"
+                      >
+                        <ChevronLeft className="w-5 h-5" /> Back to Courses
+                      </button>
+                      <h2 className="text-xl font-semibold mb-2">
+                        Topics for {selectedCourse.title}
+                      </h2>
+                      {isLoadingTopics ? (
+                        <p>Loading topics...</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {topics.map((topic) => (
+                            <div
+                              key={topic.id}
+                              className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-700 gap-3"
+                            >
+                              <div className="flex-1">
+                                <p className="font-medium text-slate-800 dark:text-slate-200">
+                                  <span className="font-bold text-slate-400">
+                                    {topic.topic_order}.
+                                  </span>{" "}
+                                  {topic.title}
+                                </p>
+                                {/* List all sessions for this topic */}
+                                {topicSessions[topic.id] &&
+                                topicSessions[topic.id].length > 0 ? (
+                                  <div className="mt-1 flex flex-col gap-2">
+                                    {topicSessions[topic.id]
+                                      .sort(
+                                        (a, b) =>
+                                          new Date(a.scheduled_at) -
+                                          new Date(b.scheduled_at)
+                                      )
+                                      .map((session) => (
+                                        
+                                        <Button
+                                          key={session.id}
+                                          onClick={() =>{
+                                            console.log("Trying to start LiveSession with:", session);
+                                            setActiveSession(session)
+                                          }}
+                                          className="bg-blue-500 text-white w-full"
+                                        >
+                                          Start Session:{" "}
+                                          {session.subtopics
+                                            ? session.subtopics.join(", ")
+                                            : session.title}
+                                        </Button>
+                                      ))}
+                                  </div>
+                                ) : (
+                                  <span className="block text-sm text-gray-400 mt-1">
+                                    No sessions scheduled yet.
+                                  </span>
+                                )}
+                              </div>
+                              <Button
+                                onClick={() => openScheduleSessionModal(topic)}
+                                className="bg-green-500 text-white"
+                              >
+                                + Schedule Session for this Topic
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {sessionModal && (
+                        <ScheduleSessionModal
+                          topicId={sessionModal.topicId}
+                          topicTitle={sessionModal.topicTitle}
+                          courseId={selectedCourse.id}
+                          onClose={closeScheduleSessionModal}
+                          onSessionCreated={handleSessionCreated}
+                        />
+                      )}
+                    </>
                   ) : (
-                    <CoursesList
-                      courses={courses}
-                      isLoading={isLoadingCourses}
-                      onSelectCourse={setSelectedCourse}
-                      onCreateCourse={() => setIsCreateCourseOpen(true)}
-                    />
+                    <>
+                      <div className="flex justify-end mb-6">
+                        <Button
+                          onClick={() => setIsCreateCourseOpen(true)}
+                          className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-purple-500 hover:to-indigo-500"
+                        >
+                          Create New Course
+                        </Button>
+                      </div>
+                      {isLoadingCourses ? (
+                        <p className="text-center p-8">Loading courses...</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {courses.length === 0 ? (
+                            <div className="text-center text-slate-500 py-10 border-2 border-dashed rounded-lg">
+                              <h3 className="text-lg font-semibold">
+                                You haven't created any courses yet.
+                              </h3>
+                            </div>
+                          ) : (
+                            courses.map((course) => (
+                              <div
+                                key={course.id}
+                                onClick={() => setSelectedCourse(course)}
+                                className="bg-slate-50 dark:bg-slate-700/50 p-5 rounded-xl border dark:border-slate-700 flex flex-col sm:flex-row justify-between sm:items-center gap-4 cursor-pointer hover:shadow-md transition-all"
+                              >
+                                <div className="flex-grow">
+                                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                                    {course.title}
+                                  </h2>
+                                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                                    Skill: {course.skill?.name || "N/A"}
+                                  </p>
+                                </div>
+                                <div className="flex-shrink-0">
+                                  {course.is_verified ? (
+                                    <span className="text-sm font-bold bg-green-100 text-green-800 dark:bg-green-800/50 dark:text-green-300 py-1 px-4 rounded-full">
+                                      Verified
+                                    </span>
+                                  ) : (
+                                    <span className="text-sm font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-800/50 dark:text-yellow-300 py-1 px-4 rounded-full">
+                                      In Progress
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -740,312 +791,3 @@ const Profile = () => {
 };
 
 export default Profile;
-
-// --- Sub-Components for the Teacher Dashboard ---
-
-function CoursesList({ courses, isLoading, onSelectCourse, onCreateCourse }) {
-  if (isLoading) return <p className="text-center p-8">Loading courses...</p>;
-  return (
-    <div>
-      <div className="flex justify-end mb-6">
-        <Button
-          onClick={onCreateCourse}
-          className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-purple-500 hover:to-indigo-500"
-        >
-          + Create New Course
-        </Button>
-      </div>
-      <div className="space-y-4">
-        {courses.length > 0 ? (
-          courses.map((course) => (
-            <div
-              key={course.id}
-              onClick={() => onSelectCourse(course)}
-              className="bg-slate-50 dark:bg-slate-700/50 p-5 rounded-xl border dark:border-slate-700 flex flex-col sm:flex-row justify-between sm:items-center gap-4 cursor-pointer hover:shadow-md transition-all"
-            >
-              <div className="flex-grow">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                  {course.title}
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Skill: {course.skill?.name || "N/A"}
-                </p>
-              </div>
-              <div className="flex-shrink-0">
-                {course.is_verified ? (
-                  <span className="text-sm font-bold bg-green-100 text-green-800 dark:bg-green-800/50 dark:text-green-300 py-1 px-4 rounded-full">
-                    ✅ Verified
-                  </span>
-                ) : (
-                  <span className="text-sm font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-800/50 dark:text-yellow-300 py-1 px-4 rounded-full">
-                    ⏳ In Progress
-                  </span>
-                )}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="text-center text-slate-500 py-10 border-2 border-dashed rounded-lg">
-            <h3 className="text-lg font-semibold">
-              You haven't created any courses yet.
-            </h3>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CourseEditor({ course, onBack, onStartSession }) {
-  const [topics, setTopics] = useState([]);
-  const [isLoadingTopics, setIsLoadingTopics] = useState(true);
-  const [newTopicTitle, setNewTopicTitle] = useState("");
-  const { token } = useAuth();
-
-  const [sessions, setSessions] = useState([]);
-  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
-  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-
-  const fetchTopics = useCallback(async () => {
-    setIsLoadingTopics(true);
-    try {
-      const response = await axiosInstance.get(`/courses/${course.id}/topics`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setTopics(response.data || []);
-    } catch (error) {
-      toast.error("Could not load topics.");
-    } finally {
-      setIsLoadingTopics(false);
-    }
-  }, [course.id, token]);
-
-  const fetchSessions = useCallback(async () => {
-    setIsLoadingSessions(true);
-    try {
-      const response = await axiosInstance.get(
-        `/courses/${course.id}/sessions`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setSessions(response.data || []);
-    } catch (error) {
-      toast.error("Could not load sessions for this course.");
-    } finally {
-      setIsLoadingSessions(false);
-    }
-  }, [course.id, token]);
-
-  useEffect(() => {
-    fetchTopics();
-    fetchSessions();
-  }, [fetchTopics, fetchSessions]);
-
-  const handleAddTopic = async (e) => {
-    e.preventDefault();
-    if (!newTopicTitle) return;
-    try {
-      await axiosInstance.post(
-        `/courses/${course.id}/topics`,
-        { title: newTopicTitle, topic_order: (topics?.length || 0) + 1 },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      toast.success("Topic added!");
-      setNewTopicTitle("");
-      fetchTopics();
-    } catch (error) {
-      toast.error(error.response?.data?.error || "Failed to add topic.");
-    }
-  };
-
-  const handleVerifyCourse = async () => {
-    try {
-      const response = await axiosInstance.post(
-        `/courses/${course.id}/verify`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      toast.success(response.data.message);
-      onBack();
-    } catch (error) {
-      toast.error(error.response?.data?.error || "Final verification failed.");
-    }
-  };
-
-  const allTopicsVerified =
-    !isLoadingTopics &&
-    topics?.length > 0 &&
-    topics.every((t) => t.is_verified);
-
-  return (
-    <div>
-      {isScheduleModalOpen && (
-        <ScheduleSessionModal
-          courseId={course.id}
-          onClose={() => setIsScheduleModalOpen(false)}
-          onSessionCreated={() => {
-            setIsScheduleModalOpen(false);
-            fetchSessions();
-          }}
-        />
-      )}
-
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 text-indigo-600 font-semibold mb-6 hover:underline"
-      >
-        <ChevronLeft className="w-5 h-5" /> Back to Courses
-      </button>
-      <h1 className="text-3xl font-bold text-slate-800 dark:text-white">
-        {course.title}
-      </h1>
-      <p className="text-slate-600 dark:text-slate-400 mt-2 mb-8">
-        Add topics and schedule live sessions for your curriculum.
-      </p>
-
-      <h2 className="text-xl font-semibold text-slate-700 dark:text-slate-300 mb-4">
-        Curriculum Topics
-      </h2>
-      <form
-        onSubmit={handleAddTopic}
-        className="flex flex-col sm:flex-row gap-3 mb-8"
-      >
-        <input
-          type="text"
-          value={newTopicTitle}
-          onChange={(e) => setNewTopicTitle(e.target.value)}
-          placeholder="e.g., Asynchronous JavaScript"
-          className="flex-grow w-full p-3 border-2 rounded-md bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 focus:border-indigo-500"
-        />
-        <button
-          type="submit"
-          className="bg-indigo-600 text-white font-semibold py-3 px-6 rounded-md hover:bg-indigo-700"
-        >
-          Add Topic
-        </button>
-      </form>
-      {isLoadingTopics ? (
-        <p>Loading topics...</p>
-      ) : (
-        <div className="space-y-3 mb-8">
-          {topics.map((topic) => (
-            <TopicItem
-              key={topic.id}
-              topic={topic}
-              onVerificationComplete={fetchTopics}
-            />
-          ))}
-        </div>
-      )}
-
-      <h2 className="text-xl font-semibold text-slate-700 dark:text-slate-300 mb-4 border-t dark:border-slate-700 pt-6">
-        Live Sessions
-      </h2>
-      <div className="flex justify-end mb-4">
-        <Button
-          onClick={() => setIsScheduleModalOpen(true)}
-          className="bg-gradient-to-r from-green-500 to-teal-500"
-        >
-          + Schedule New Session
-        </Button>
-      </div>
-      {isLoadingSessions ? (
-        <p>Loading sessions...</p>
-      ) : (
-        <div className="space-y-3 mb-8">
-          {sessions.length > 0 ? (
-            sessions.map((session) => (
-              <div
-                key={session.id}
-                className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border dark:border-slate-700 flex flex-col sm:flex-row justify-between sm:items-center gap-3"
-              >
-                <div>
-                  <p className="font-semibold text-slate-800 dark:text-slate-200">
-                    {session.title}
-                  </p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {new Date(session.scheduled_at).toLocaleString()}
-                  </p>
-                </div>
-                <Button
-                  onClick={() => onStartSession(session)}
-                  className="w-full sm:w-auto bg-blue-500 hover:bg-blue-600 flex items-center justify-center gap-2"
-                >
-                  <Video className="w-4 h-4" /> Start Session
-                </Button>
-              </div>
-            ))
-          ) : (
-            <p className="text-center text-slate-500 py-4">
-              No live sessions scheduled yet.
-            </p>
-          )}
-        </div>
-      )}
-
-      <div className="text-center border-t dark:border-slate-700 pt-6">
-        <button
-          onClick={handleVerifyCourse}
-          disabled={!allTopicsVerified}
-          className={`w-full sm:w-auto font-bold py-3 px-8 rounded-lg shadow-lg transition ${
-            allTopicsVerified
-              ? "bg-green-600 text-white hover:bg-green-700"
-              : "bg-slate-300 text-slate-500 cursor-not-allowed"
-          }`}
-        >
-          Finalize & Verify Course
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function TopicItem({ topic, onVerificationComplete }) {
-  const [isQuizOpen, setIsQuizOpen] = useState(false);
-  const [isStartingQuiz, setIsStartingQuiz] = useState(false);
-
-  const handleStartQuiz = () => {
-    setIsStartingQuiz(true);
-    setIsQuizOpen(true);
-    setIsStartingQuiz(false);
-  };
-
-  const handleQuizFinish = (result) => {
-    setIsQuizOpen(false);
-    if (result?.message) {
-      toast.info(result.message);
-    }
-    onVerificationComplete();
-  };
-
-  return (
-    <>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-700 gap-3">
-        <p className="font-medium text-slate-800 dark:text-slate-200">
-          <span className="font-bold text-slate-400">{topic.topic_order}.</span>{" "}
-          {topic.title}
-        </p>
-        {topic.is_verified ? (
-          <span className="text-xs font-bold bg-green-100 text-green-800 dark:bg-green-800/50 dark:text-green-300 py-1 px-3 rounded-full flex-shrink-0">
-            ✅ Verified
-          </span>
-        ) : (
-          <button
-            onClick={handleStartQuiz}
-            disabled={isStartingQuiz}
-            className="bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300 font-semibold py-1 px-4 rounded-full text-xs hover:bg-indigo-200 transition flex-shrink-0 disabled:opacity-50"
-          >
-            {isStartingQuiz ? "Preparing..." : "Verify Topic"}
-          </button>
-        )}
-      </div>
-      {isQuizOpen && (
-        <QuizGenerator
-          context={{ type: "teacher_verification", topicId: topic.id }}
-          skill={{ name: topic.title }}
-          onClose={() => setIsQuizOpen(false)}
-          onVerificationComplete={handleQuizFinish}
-        />
-      )}
-    </>
-  );
-}

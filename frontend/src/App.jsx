@@ -91,7 +91,7 @@ function App() {
           }
         />
         <Route
-          path="/session/:sessionId"
+          path="/live-session/:sessionId"
           element={
             <ProtectedRoute>
               <LiveSession />
@@ -152,6 +152,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+       
         {/* ✨ NEW: Admin-only Route */}
         <Route
           path="/admin"

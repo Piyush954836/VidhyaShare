@@ -9,7 +9,6 @@ import axiosInstance from "../api/axiosInstance";
 import { toast } from "react-toastify";
 import { MessageSquare } from 'lucide-react';
 
-// --- Main Chat Page Component ---
 const Chat = () => {
     const { roomId } = useParams();
     return (
@@ -27,11 +26,11 @@ const Chat = () => {
 
 export default Chat;
 
-// --- Chat List (Dashboard) ---
 function ChatList() {
     const [chatRooms, setChatRooms] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const { token } = useAuth();
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
     useEffect(() => {
         const fetchRooms = async () => {
@@ -55,16 +54,21 @@ function ChatList() {
             <h1 className="text-3xl font-bold mb-6 text-slate-800 dark:text-white">Conversations</h1>
             {isLoading ? <p className="text-center text-slate-500">Loading...</p> : (
                 <div className="space-y-3">
-                    {chatRooms.length > 0 ? chatRooms.map(room => (
-                        <Link to={`/chat/${room.room_id}`} key={room.room_id}
-                             className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border dark:border-slate-700 flex items-center gap-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                            <img src={room.other_participant.avatar_url || `https://i.pravatar.cc/150?u=${room.other_participant.id}`} alt={room.other_participant.name} className="w-12 h-12 rounded-full object-cover" />
-                            <div>
-                                <p className="font-semibold text-slate-900 dark:text-white">{room.other_participant.name}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">Click to view conversation</p>
-                            </div>
-                        </Link>
-                    )) : (
+                    {chatRooms.length > 0 ? chatRooms.map(room => {
+                        const avatar = room.other_participant.avatar_url 
+                            ? `${backendUrl}/uploads/avatars/${room.other_participant.avatar_url}` 
+                            : `https://i.pravatar.cc/150?u=${room.other_participant.id}`;
+                        return (
+                            <Link to={`/chat/${room.room_id}`} key={room.room_id}
+                                className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border dark:border-slate-700 flex items-center gap-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                                <img src={avatar} alt={room.other_participant.name} className="w-12 h-12 rounded-full object-cover" />
+                                <div>
+                                    <p className="font-semibold text-slate-900 dark:text-white">{room.other_participant.name}</p>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">Click to view conversation</p>
+                                </div>
+                            </Link>
+                        )
+                    }) : (
                         <div className="text-center text-gray-500 p-10 border-2 border-dashed rounded-lg">
                             <MessageSquare size={40} className="mx-auto text-slate-400 mb-2"/>
                             <p>You have no active conversations.</p>
@@ -76,15 +80,14 @@ function ChatList() {
     );
 }
 
-// --- Chat Room Component ---
 function ChatRoom({ roomId }) {
     const { user, token } = useAuth();
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(true);
     const messagesEndRef = useRef(null);
+    const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
-    // Fetch messages
     const fetchMessages = useCallback(async () => {
         if (!roomId || !token) return;
         setIsLoading(true);
@@ -102,7 +105,6 @@ function ChatRoom({ roomId }) {
 
     useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
-    // Subscribe to Realtime
     useEffect(() => {
         if (!roomId || !user) return;
         let subscribed = true;
@@ -114,7 +116,7 @@ function ChatRoom({ roomId }) {
                 { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` },
                 async (payload) => {
                     if (!subscribed) return;
-                    if (payload.new.sender_id === user.id) return; // skip own messages
+                    if (payload.new.sender_id === user.id) return;
                     const { data: sender } = await supabase.from('profiles').select('id, full_name').eq('id', payload.new.sender_id).single();
                     setMessages(prev => [...prev, { ...payload.new, sender }]);
                 }
@@ -127,7 +129,6 @@ function ChatRoom({ roomId }) {
         };
     }, [roomId, user]);
 
-    // Send message
     const sendMessage = useCallback(async (e) => {
         e.preventDefault();
         if (!input.trim()) return;

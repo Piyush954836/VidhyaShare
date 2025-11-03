@@ -1,11 +1,12 @@
 import express from 'express';
 import { authenticate } from '../middleware/authenticate.js'; // Adjust path if needed
-import { createSession, bookSession, getJoinToken, listSessions } from '../controllers/sessions.js';
+import { createSession, bookSession, getJoinToken, listSessions, listSessionsByTopic } from '../controllers/sessions.js';
 
 const router = express.Router();
 
 // GET /api/sessions/
 // Lists all available, scheduled sessions
+router.get('/topic', authenticate, listSessionsByTopic);
 router.get('/', authenticate, listSessions);
 
 // POST /api/sessions/
