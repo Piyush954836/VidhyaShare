@@ -353,7 +353,7 @@ export default function LiveSession({ session: propSession, onClose }) {
 
       </div>
       {/* Chat Panel */}
-      {showChat && rtmChannel && (
+      {showChat && (
         <div className="fixed right-0 top-0 h-full w-80 bg-gray-900 border-l border-gray-700 shadow-xl z-50 flex flex-col">
           <div className="flex items-center justify-between p-3 border-b border-gray-700">
             <span className="text-lg font-bold">Group Chat</span>
