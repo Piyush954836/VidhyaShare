@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticate } from '../middleware/authenticate.js'; // Adjust path if needed
-import { createSession, bookSession, getJoinToken, listSessions, listSessionsByTopic } from '../controllers/sessions.js';
+import { createSession, bookSession, getJoinToken, listSessions, listSessionsByTopic, blockUserFromSession } from '../controllers/sessions.js';
 
 const router = express.Router();
 
@@ -8,6 +8,7 @@ const router = express.Router();
 // Lists all available, scheduled sessions
 router.get('/topic', authenticate, listSessionsByTopic);
 router.get('/', authenticate, listSessions);
+router.post("/block-user", authenticate, blockUserFromSession);
 
 // POST /api/sessions/
 // (Teacher) Schedules a new session

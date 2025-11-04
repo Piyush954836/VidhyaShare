@@ -1,6 +1,7 @@
 import agora from "agora-access-token";
 import { supabase } from "../config/supabase.js";
 import { v4 as uuidv4 } from "uuid"; // Install uuid: npm install uuid
+import axios from "axios";
 
 const { RtcTokenBuilder, RtcRole } = agora;
 
@@ -217,5 +218,39 @@ export const listSessionsByTopic = async (req, res) => {
     res.json(data || []);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch topic sessions." });
+  }
+};
+
+// --- REMOVE & BLOCK a user from a session ---
+export const blockUserFromSession = async (req, res) => {
+  const { channelName, uid } = req.body;
+  const AGORA_APP_ID = process.env.AGORA_APP_ID;
+  const AGORA_REST_KEY = process.env.AGORA_REST_KEY;
+  const AGORA_REST_SECRET = process.env.AGORA_REST_SECRET;
+
+  if (!channelName || uid == null)
+    return res.status(400).json({ error: "channelName and uid required." });
+
+  try {
+    await axios.post(
+      "https://api.agora.io/dev/v1/kicking-rule",
+      {
+        appid: AGORA_APP_ID,
+        cname: channelName,
+        uid: Number(uid),
+        time_in_seconds: 86400,
+        privileges: ["join_channel"]
+      },
+      {
+        auth: {
+          username: AGORA_REST_KEY,
+          password: AGORA_REST_SECRET
+        }
+      }
+    );
+    res.json({ message: "User removed and blocked from session." });
+  } catch (err) {
+    console.error("[KICK/BAN ERROR]", err.message, err.response?.data);
+    res.status(500).json({ error: "Failed to block/remove user." });
   }
 };

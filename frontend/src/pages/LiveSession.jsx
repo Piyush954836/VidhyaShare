@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import AgoraRTC from "agora-rtc-sdk-ng";
+import AgoraRTM from "agora-rtm-sdk";
 import { toast } from "react-toastify";
 import { Mic, Video, PhoneOff } from "lucide-react";
 import axiosInstance from "../api/axiosInstance";
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from "../context/AuthContext";
 import { useLocation, useParams, useNavigate } from "react-router-dom";
+import ChatPanel from "./ChatPanel";
 
 // Singleton RTC client
 const rtcClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
@@ -20,30 +22,37 @@ function AgoraVideoPlayer({ videoTrack, className }) {
   return <div ref={ref} className={className} />;
 }
 
-// Accept props, support both modal (props) and route/param (student)
 export default function LiveSession({ session: propSession, onClose }) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const location = useLocation();
   const { sessionId } = useParams();
   const navigate = useNavigate();
 
-  // Merge - prop > state > param
+  // Merge session props
   const session =
     propSession ||
     location.state?.session ||
     (sessionId ? { id: sessionId } : undefined);
 
-  // Log what's received for debugging
-  console.log("LiveSession: received propSession:", propSession);
-  console.log("LiveSession: computed session object:", session);
-
+  // Agora state
   const [agoraConfig, setAgoraConfig] = useState(null);
   const [localTracks, setLocalTracks] = useState([]);
   const [remoteUsers, setRemoteUsers] = useState([]);
+  const [screenTrack, setScreenTrack] = useState(null);
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [remoteScreenSharer, setRemoteScreenSharer] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const hasJoined = useRef(false);
+  const [rtmClient, setRtmClient] = useState(null);
+  const [rtmChannel, setRtmChannel] = useState(null);
+
+  // RTM chat state
+  const [messages, setMessages] = useState([]);
+  const [message, setMessage] = useState("");
+  const [showChat, setShowChat] = useState(false);
+
 
   // Defensive: error if NO session or no session.id
   if (!session || !session.id) {
@@ -87,22 +96,43 @@ export default function LiveSession({ session: propSession, onClose }) {
     // eslint-disable-next-line
   }, [session.id, token]);
 
-  // Agora RTC join/publish/track management
+  // RTC join/publish/track management + handle screen sharing
   useEffect(() => {
     if (!agoraConfig) return;
     if (hasJoined.current) return;
 
+    // RTC event handlers
     rtcClient.on("user-published", async (user, mediaType) => {
       await rtcClient.subscribe(user, mediaType);
-      setRemoteUsers(prev => [...prev.filter(u => u.uid !== user.uid), user]);
+      setRemoteUsers(prev => [
+        ...prev.filter(u => u.uid !== user.uid),
+        user
+      ]);
+
+      // Detect remote screen share via user.videoTrack.getTrackLabel()
+      if (
+        mediaType === "video" &&
+        user.videoTrack &&
+        user.videoTrack.getTrackLabel &&
+        user.videoTrack.getTrackLabel().toLowerCase().includes("screen")
+      ) {
+        setRemoteScreenSharer(user.uid);
+      }
+
       if (mediaType === "audio") user.audioTrack?.play();
     });
     rtcClient.on("user-unpublished", (user, mediaType) => {
-      if (mediaType === "video")
-        setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+      if (
+        mediaType === "video" &&
+        remoteScreenSharer === user.uid
+      ) {
+        setRemoteScreenSharer(null);
+      }
+      setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
     });
     rtcClient.on("user-left", user => {
       setRemoteUsers(prev => prev.filter(u => u.uid !== user.uid));
+      if (remoteScreenSharer === user.uid) setRemoteScreenSharer(null);
     });
 
     const initAndJoin = async () => {
@@ -112,7 +142,7 @@ export default function LiveSession({ session: propSession, onClose }) {
           agoraConfig.appId,
           agoraConfig.channelName,
           agoraConfig.token,
-          null
+          user.id
         );
         const tracks = await AgoraRTC.createMicrophoneAndCameraTracks();
         setLocalTracks(tracks);
@@ -126,6 +156,10 @@ export default function LiveSession({ session: propSession, onClose }) {
 
     return () => {
       if (hasJoined.current) {
+        if (screenTrack) {
+          screenTrack.stop();
+          screenTrack.close();
+        }
         localTracks.forEach(track => {
           track.stop();
           track.close();
@@ -138,6 +172,44 @@ export default function LiveSession({ session: propSession, onClose }) {
     // eslint-disable-next-line
   }, [agoraConfig]);
 
+  // ------------------ Screen sharing -----------------
+  const handleToggleScreenShare = async () => {
+  if (!isScreenSharing && remoteScreenSharer) {
+    toast.error("Someone else is already sharing their screen.");
+    return;
+  }
+  if (!isScreenSharing) {
+    // Start screen share
+    const sTrack = await AgoraRTC.createScreenVideoTrack();
+    setScreenTrack(sTrack);
+    if (localTracks[1]) {
+      await rtcClient.unpublish(localTracks[1]);  // Unpublish camera only if it exists
+    }
+    await rtcClient.publish(sTrack);
+    setIsScreenSharing(true);
+
+    sTrack.on("track-ended", async () => {
+      await rtcClient.unpublish(sTrack);
+      if (localTracks[1]) {
+        await rtcClient.publish(localTracks[1]);
+      }
+      setIsScreenSharing(false);
+      setScreenTrack(null);
+    });
+  } else {
+    // Stop screen share
+    if (screenTrack) {
+      await rtcClient.unpublish(screenTrack);
+      if (localTracks[1]) {
+        await rtcClient.publish(localTracks[1]);
+      }
+      setIsScreenSharing(false);
+      setScreenTrack(null);
+    }
+  }
+};
+
+
   const handleMicToggle = async () => {
     if (localTracks[0]) {
       await localTracks[0].setEnabled(!micOn);
@@ -148,6 +220,48 @@ export default function LiveSession({ session: propSession, onClose }) {
     if (localTracks[1]) {
       await localTracks[1].setEnabled(!cameraOn);
       setCameraOn(!cameraOn);
+    }
+  };
+
+
+  // --------------- Remove & Block a user -----------------
+  const handleKickBan = async uid => {
+    try {
+      await axiosInstance.post("/sessions/block-user", {
+        channelName: agoraConfig.channelName,
+        uid
+      });
+      toast.success(`User ${uid} removed and blocked!`);
+    } catch (err) {
+      toast.error("Failed to remove/block user.");
+    }
+  };
+
+  // --------------- Agora RTM (Chat) -----------------
+  useEffect(() => {
+  if (!agoraConfig) return;
+  let client, channel;
+  (async () => {
+    client = AgoraRTM.createInstance(agoraConfig.appId);
+    await client.login({ uid: String(user.id) });
+    channel = client.createChannel(agoraConfig.channelName);
+    await channel.join();
+    setRtmClient(client);
+    setRtmChannel(channel);
+  })();
+
+  return () => {
+    channel?.leave();
+    client?.logout();
+  };
+  // eslint-disable-next-line
+}, [agoraConfig]);
+
+  const sendMessage = async () => {
+    if (rtmChannel && message.trim()) {
+      await rtmChannel.sendMessage({ text: message });
+      setMessages(msgs => [...msgs, { senderId: String(user.id), text: message }]);
+      setMessage("");
     }
   };
 
@@ -163,25 +277,15 @@ export default function LiveSession({ session: propSession, onClose }) {
     <div className="fixed inset-0 bg-gray-900 text-white flex flex-col p-4 z-50">
       {/* Video Grid */}
       <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4 auto-rows-fr">
-        {/* Local Video */}
-        {localTracks[1] && (
-          <div className="relative bg-black border-2 border-indigo-500 rounded-lg overflow-hidden">
-            {cameraOn ? (
-              <AgoraVideoPlayer
-                videoTrack={localTracks[1]}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gray-800">
-                <p>Camera is off</p>
-              </div>
-            )}
-            <span className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 text-sm rounded">
-              You
-            </span>
-          </div>
+        {/* Local Screen share/camera */}
+        {(isScreenSharing && screenTrack) ? (
+          <AgoraVideoPlayer videoTrack={screenTrack} className="w-full h-full object-cover" />
+        ) : (
+          localTracks[1] && (
+            <AgoraVideoPlayer videoTrack={localTracks[1]} className="w-full h-full object-cover" />
+          )
         )}
-        {/* Remote Users */}
+        {/* Remote Users (show screen share user separately) */}
         {remoteUsers.map(user => (
           <div key={user.uid} className="relative bg-black border-2 border-gray-700 rounded-lg overflow-hidden">
             {user.hasVideo ? (
@@ -194,8 +298,18 @@ export default function LiveSession({ session: propSession, onClose }) {
                 <p>User {user.uid}'s camera is off</p>
               </div>
             )}
+            {/* Kick/Block Button (show for everyone except yourself) */}
+            {String(user.uid) !== String(user.id) && (
+              <button
+                onClick={() => handleKickBan(user.uid)}
+                className="absolute top-2 right-2 bg-red-700 text-xs px-2 py-1 rounded"
+              >
+                Remove & Block
+              </button>
+            )}
             <span className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 text-sm rounded">
               User {user.uid}
+              {remoteScreenSharer === user.uid && " (Screen Sharing)"}
             </span>
           </div>
         ))}
@@ -215,12 +329,55 @@ export default function LiveSession({ session: propSession, onClose }) {
           <Video size={24} />
         </button>
         <button
+          onClick={handleToggleScreenShare}
+          className={`p-3 rounded-full ${isScreenSharing ? "bg-green-600" : "bg-gray-600"}`}
+        >
+          {/* Replace with a proper icon */}
+          {isScreenSharing ? "🛑" : "🖥️"}
+        </button>
+        <button
           onClick={() => (onClose ? onClose() : navigate(-1))}
           className="p-3 rounded-full bg-red-600 hover:bg-red-700"
         >
           <PhoneOff size={24} />
         </button>
+
+        <button
+          onClick={() => setShowChat((v) => !v)}
+          className={`p-3 rounded-full ${showChat ? "bg-indigo-700" : "bg-gray-600"}`}
+          title="Open Chat"
+        >
+          {/* Use a chat/message icon if you like */}
+          <span role="img" aria-label="chat">💬</span>
+        </button>
+
       </div>
+      {/* Chat Panel */}
+      {showChat && rtmChannel && (
+        <div className="fixed right-0 top-0 h-full w-80 bg-gray-900 border-l border-gray-700 shadow-xl z-50 flex flex-col">
+          <div className="flex items-center justify-between p-3 border-b border-gray-700">
+            <span className="text-lg font-bold">Group Chat</span>
+            <button
+              onClick={() => setShowChat(false)}
+              className="text-gray-300 hover:text-red-400"
+              title="Close"
+            >
+              ✖
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <ChatPanel rtmChannel={rtmChannel} userId={user.id} />
+          </div>
+        </div>
+      )}
+
+
+      {/* Screen share notice */}
+      {remoteScreenSharer && !isScreenSharing && (
+        <div className="text-yellow-400 mt-2 text-center">
+          Screen sharing in progress by User {remoteScreenSharer}
+        </div>
+      )}
     </div>
   );
 }
