@@ -57,12 +57,14 @@ export const getMessages = async (req, res) => {
 
         const { data, error } = await supabase
             .from("chat_messages")
-            .select(`id, content, sent_at, sender:profiles (id, full_name)`)
+            .select(`id, content, sent_at, sender:profiles (id, full_name, avatar_url)`)
             .eq("room_id", roomId)
             .order("sent_at", { ascending: true });
 
         if (error) throw error;
         res.status(200).json(data);
+
+        
     } catch (err) {
         console.error("[ERROR] Getting messages:", err);
         res.status(500).json({ error: "Failed to retrieve messages." });

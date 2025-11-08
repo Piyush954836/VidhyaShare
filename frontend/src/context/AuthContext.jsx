@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { supabase } from "../config/supabase"; // ✅ import supabase client
+import { supabase } from "../config/supabase";
 
 const AuthContext = createContext();
 
@@ -12,6 +12,19 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [loadingSession, setLoadingSession] = useState(true);
 
+  // 🧩 Normalize avatar URL for frontend consistency
+  const normalizeAvatarUrl = (profile) => {
+    if (!profile?.avatar_url) return `https://i.pravatar.cc/150?u=${profile?.id}`;
+    if (profile.avatar_url.startsWith("http")) return profile.avatar_url;
+
+    const cleanPath = profile.avatar_url
+      .replace(/^\/+/, "")
+      .replace(/^uploads\//, "")
+      .replace(/^avatars\//, "avatars/");
+
+    return `https://jwkxwvtrjivhktqovxwh.supabase.co/storage/v1/object/public/${cleanPath}`;
+  };
+
   // 🔹 Fetch user from backend using Supabase token
   const fetchUser = async () => {
     if (!token) {
@@ -20,7 +33,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      // 🧩 Restore Supabase session before any queries or subscriptions
+      // Ensure Supabase session is active
       await supabase.auth.setSession({ access_token: token });
 
       const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/me`, {
@@ -29,7 +42,10 @@ export const AuthProvider = ({ children }) => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to fetch user");
 
-      setUser(data); // backend already merges profile + email
+      // 🧠 Normalize avatar here before saving
+      const normalizedUser = { ...data, avatar_url: normalizeAvatarUrl(data) };
+
+      setUser(normalizedUser);
     } catch (err) {
       console.error("[AuthContext] fetchUser error:", err.message);
       localStorage.removeItem("supabase_token");
@@ -59,10 +75,8 @@ export const AuthProvider = ({ children }) => {
       const accessToken = data.session?.access_token;
       if (!accessToken) throw new Error("No access token received");
 
-      // 🧩 Save token and restore Supabase session
       localStorage.setItem("supabase_token", accessToken);
       setToken(accessToken);
-      setUser(data.user);
 
       await supabase.auth.setSession({
         access_token: accessToken,
@@ -70,6 +84,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       toast.success("Logged in successfully!");
+      await fetchUser(); // ✅ immediately sync user data
     } catch (err) {
       console.error("[AuthContext] login error:", err.message);
       toast.error(err.message || "Login failed");
@@ -93,10 +108,8 @@ export const AuthProvider = ({ children }) => {
       const accessToken = data.session?.access_token;
       if (!accessToken) throw new Error("No access token received");
 
-      // 🧩 Save token and restore Supabase session
       localStorage.setItem("supabase_token", accessToken);
       setToken(accessToken);
-      setUser(data.user);
 
       await supabase.auth.setSession({
         access_token: accessToken,
@@ -104,6 +117,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       toast.success("Registered successfully!");
+      await fetchUser(); // ✅ auto-login and sync profile
     } catch (err) {
       console.error("[AuthContext] register error:", err.message);
       toast.error(err.message || "Registration failed");
@@ -115,7 +129,7 @@ export const AuthProvider = ({ children }) => {
   // 🔹 Logout
   const logout = async () => {
     try {
-      await supabase.auth.signOut(); // ✅ Clear Supabase session
+      await supabase.auth.signOut();
     } catch (err) {
       console.error("[AuthContext] logout error:", err.message);
     }
@@ -126,7 +140,7 @@ export const AuthProvider = ({ children }) => {
     navigate("/login");
   };
 
-  // 🔹 Social login (redirects to backend)
+  // 🔹 Social login
   const socialLogin = (provider) => {
     window.location.href = `${import.meta.env.VITE_API_URL}/auth/social-login/${provider}`;
   };

@@ -147,27 +147,63 @@ export const oauthExchange = async (req, res) => {
 
 // --------- Get Current User (from Supabase) ---------
 export const me = async (req, res) => {
-	try {
-		const token = req.headers.authorization?.split(" ")[1];
-		if (!token) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
 
-		const { data: { user }, error } = await supabase.auth.getUser(token);
-		if (error || !user) return res.status(401).json({ error: error?.message || "Invalid token" });
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return res.status(401).json({ error: authError?.message || "Invalid token" });
+    }
 
-		console.log("[DEBUG] Current Supabase user:", user);
+    console.log("[DEBUG] Current Supabase user:", user);
 
-		// Fetch profile data, which now includes total_points
-		const { data: profile } = await supabase
-			.from("profiles")
-			.select("*")
-			.eq("id", user.id)
-			.single();
+    // Fetch user profile
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
 
-		// Ensure we pass the total_points back to the frontend
-		res.json({ ...profile, email: user.email });
+    if (profileError || !profile) {
+      console.error("[ERROR] Profile fetch error:", profileError);
+      return res.status(404).json({ error: "Profile not found" });
+    }
 
-	} catch (err) {
-		console.error("[ERROR] /me exception:", err);
-		res.status(401).json({ error: "Invalid or expired token" });
-	}
+    // Normalize avatar URL
+    let avatar_url = profile.avatar_url;
+    if (avatar_url) {
+      if (!avatar_url.startsWith("http")) {
+        // Clean leading slashes and ensure proper bucket path
+        const cleanPath = avatar_url
+          .replace(/^\/+/, "")
+          .replace(/^uploads\//, "")
+          .replace(/^avatars\//, "avatars/");
+
+        avatar_url = `https://jwkxwvtrjivhktqovxwh.supabase.co/storage/v1/object/public/${cleanPath}`;
+      }
+    } else {
+      // Default avatar if missing
+      avatar_url = `https://i.pravatar.cc/150?u=${user.id}`;
+    }
+
+    // Send response
+    res.json({
+      id: user.id,
+      email: user.email,
+      full_name: profile.full_name,
+      bio: profile.bio,
+      skills_offered: profile.skills_offered,
+      skills_wanted: profile.skills_wanted,
+      total_points: profile.total_points,
+      role: profile.role,
+      avatar_url, // ✅ always valid
+      created_at: profile.created_at,
+      updated_at: profile.updated_at,
+    });
+
+  } catch (err) {
+    console.error("[ERROR] /me exception:", err);
+    res.status(401).json({ error: "Invalid or expired token" });
+  }
 };
