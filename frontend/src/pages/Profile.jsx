@@ -19,6 +19,7 @@ import QuizGenerator from "../components/QuizGenerator";
 import PracticalTestModal from "../components/PracticalTestModal";
 import LiveSession from "./LiveSession";
 
+
 const CountdownTimer = ({ expiryTimestamp }) => {
   const calculateTimeLeft = useCallback(() => {
     const difference = +new Date(expiryTimestamp) - +new Date();
@@ -258,24 +259,40 @@ const Profile = () => {
   const [sessionModal, setSessionModal] = useState(null); // {topicId, topicTitle} or null
   const [topicSessions, setTopicSessions] = useState({}); // Maps topicId to array of sessions
 
-  const fetchProfileData = useCallback(async () => {
-    if (!user || !token) return;
-    try {
-      const profileRes = await axiosInstance.get("/profile", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const profile = profileRes.data || {};
-      setName(profile.full_name?.trim() || "User");
-      setBio(profile.bio?.trim() || "");
-      setProfilePic(profile.avatar_url?.trim());
-      const skillsRes = await axiosInstance.get("/user-skills", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSkills(Array.isArray(skillsRes.data) ? skillsRes.data : []);
-    } catch (err) {
-      toast.error("Failed to load profile data.");
+
+const fetchProfileData = useCallback(async () => {
+  if (!user || !token) return;
+
+  try {
+    const profileRes = await axiosInstance.get("/profile", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const profile = profileRes.data || {};
+
+    // Handle avatar URL properly
+    let profilePicUrl;
+    if (profile.avatar_url && profile.avatar_url.trim() !== "") {
+      // Extract filename from any path
+      const filename = profile.avatar_url.split("/").pop();
+      profilePicUrl = `https://jwkxwvtrjivhktqovxwh.supabase.co/storage/v1/object/public/avatars/avatars/${filename}`;
+    } else {
+      profilePicUrl = `https://i.pravatar.cc/150?u=${user.id}`;
     }
-  }, [user, token]);
+
+    setName(profile.full_name?.trim() || "User");
+    setBio(profile.bio?.trim() || "");
+    setProfilePic(profilePicUrl);
+
+    const skillsRes = await axiosInstance.get("/user-skills", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setSkills(Array.isArray(skillsRes.data) ? skillsRes.data : []);
+  } catch (err) {
+    console.error("Profile fetch error:", err);
+    toast.error("Failed to load profile data.");
+  }
+}, [user, token]);
 
   const fetchCourses = useCallback(async () => {
     if (!user || !token) return;

@@ -71,40 +71,45 @@ export const getMessages = async (req, res) => {
 
 // --- SEND A NEW MESSAGE TO A CHAT ROOM ---
 export const sendMessage = async (req, res) => {
-    const { roomId } = req.params;
-    const { content } = req.body;
-    const sender_id = req.user.id;
+  const { roomId } = req.params;
+  const { content } = req.body;
+  const sender_id = req.user.id;
 
-    if (!content || !content.trim()) {
-        return res.status(400).json({ error: "Message content cannot be empty." });
+  if (!content || !content.trim()) {
+    return res.status(400).json({ error: "Message content cannot be empty." });
+  }
+
+  try {
+    // Ensure sender is a participant
+    const { data: participant, error: participantError } = await supabase
+      .from("chat_participants")
+      .select("id")
+      .eq("room_id", roomId)
+      .eq("user_id", sender_id)
+      .single();
+
+    if (participantError || !participant) {
+      return res.status(403).json({ error: "You cannot send messages to this chat room." });
     }
 
-    try {
-        // ✨ NEW: Added security check to ensure sender is a participant
-        const { data: participant, error: participantError } = await supabase
-            .from("chat_participants")
-            .select("id")
-            .eq("room_id", roomId)
-            .eq("user_id", sender_id)
-            .single();
+    // Insert new chat message
+    const { data: messageData, error: messageError } = await supabase
+      .from("chat_messages")
+      .insert({ room_id: roomId, sender_id, content: content.trim() })
+      .select()
+      .single();
 
-        if (participantError || !participant) {
-            return res.status(403).json({ error: "You cannot send messages to this chat room." });
-        }
+    if (messageError) throw messageError;
 
-        const { data, error } = await supabase
-            .from("chat_messages")
-            .insert({ room_id: roomId, sender_id, content: content.trim() })
-            .select()
-            .single();
+    // ✅ Let Supabase trigger handle notifications automatically
+    res.status(201).json({ message: "Message sent", messageData });
 
-        if (error) throw error;
-        res.status(201).json({ message: "Message sent", message: data });
-    } catch (err) {
-        console.error("[ERROR] Sending message:", err);
-        res.status(500).json({ error: "Failed to send message." });
-    }
+  } catch (err) {
+    console.error("[ERROR] Sending message:", err);
+    res.status(500).json({ error: "Failed to send message." });
+  }
 };
+
 
 // --- GET ALL CHAT ROOMS FOR THE LOGGED-IN USER ---
 export const getMyChatRooms = async (req, res) => {

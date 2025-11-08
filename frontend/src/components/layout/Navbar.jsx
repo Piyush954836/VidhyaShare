@@ -4,39 +4,46 @@ import useThemeStore from "../../store/themeStore";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import axiosInstance from "../../api/axiosInstance";
+import NotificationBell from "../NotificationBell";
 
 const Navbar = () => {
   const { darkMode, toggleTheme } = useThemeStore();
   const { user, token, logout } = useAuth();
   const [openMenu, setOpenMenu] = useState(false);
-  const [avatar, setAvatar] = useState("");
+  const [avatar, setAvatar] = useState(null);
   const navigate = useNavigate();
-  const backendUrl = import.meta.env.VITE_BACKEND_URL; // Backend URL from env
 
-  // Fetch latest profile avatar
   useEffect(() => {
     const fetchAvatar = async () => {
-      if (!user || !token) return;
+      if (!user?.id || !token) return;
+
       try {
-        const res = await axiosInstance.get("/profile", {
+        const res = await axiosInstance.get(`/profile/${user.id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (res.data.avatar_url) {
-          // Construct the full URL for the avatar
-          setAvatar(`${backendUrl}/uploads/avatars/${res.data.avatar_url}?t=${Date.now()}`);
+
+        const profile = res.data;
+        console.log("Profile fetched:", profile);
+
+        let avatarUrl;
+        if (profile.avatar_url) {
+          // Extract just the filename from avatar_url
+          const filename = profile.avatar_url.split("/").pop();
+          avatarUrl = `https://jwkxwvtrjivhktqovxwh.supabase.co/storage/v1/object/public/avatars/avatars/${filename}`;
         } else {
-          // Fallback avatar if none is set
-          setAvatar(`https://i.pravatar.cc/40?u=${user.id}`);
+          avatarUrl = `https://i.pravatar.cc/150?u=${user.id}`;
         }
+
+        setAvatar(avatarUrl);
       } catch (err) {
         console.error("Navbar avatar fetch error:", err);
-        setAvatar(`https://i.pravatar.cc/40?u=${user.id}`);
+        setAvatar(`https://i.pravatar.cc/150?u=${user.id}`);
       }
     };
-    fetchAvatar();
-  }, [user, token, backendUrl]);
 
-  // Logout handler
+    fetchAvatar();
+  }, [user?.id, token]);
+
   const handleLogout = async () => {
     await logout();
     setOpenMenu(false);
@@ -45,19 +52,13 @@ const Navbar = () => {
 
   return (
     <nav className="bg-gradient-to-r from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 shadow-md px-4 md:px-6 py-3 flex justify-between items-center transition-colors duration-500">
-      {/* Logo: Updated to use the image from the public folder */}
-       <Link to="/">
-        {/*<img
-          src="/VidhyaShareLOGO.png"
-          alt="VidhaShare Logo"
-          className="h-10 w-auto transition-transform duration-300 hover:scale-105" // Set height and responsive classes
-        /> */}
-        <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">VidhyaShare Community</h1>
-      </Link> 
+      <Link to="/">
+        <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+          VidhyaShare Community
+        </h1>
+      </Link>
 
-      {/* Right Section */}
       <div className="flex items-center gap-4 relative">
-        {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
           className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -69,24 +70,19 @@ const Navbar = () => {
           )}
         </button>
 
-        {/* User Menu */}
-        {user ? (
+        {user && <NotificationBell />}
+
+        {user && avatar && (
           <div className="relative">
-            {avatar ? (
-              <img
-                src={avatar}
-                alt={user.full_name || "User"}
-                className="w-10 h-10 rounded-full cursor-pointer object-cover border-2 border-blue-500 dark:border-blue-400 transition-all duration-300 hover:ring-4 hover:ring-blue-300 dark:hover:ring-blue-700"
-                onClick={() => setOpenMenu(!openMenu)}
-              />
-            ) : (
-              <div
-                onClick={() => setOpenMenu(!openMenu)}
-                className="w-10 h-10 rounded-full cursor-pointer border-2 border-blue-500 dark:border-blue-400 flex items-center justify-center bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 font-bold text-lg transition-colors duration-300 hover:ring-4 hover:ring-blue-300 dark:hover:ring-blue-700"
-              >
-                {user.full_name ? user.full_name.charAt(0).toUpperCase() : "U"}
-              </div>
-            )}
+            <img
+              src={avatar}
+              alt={user.full_name || "User"}
+              onError={(e) => {
+                e.target.src = `https://i.pravatar.cc/150?u=${user.id}`;
+              }}
+              className="w-10 h-10 rounded-full cursor-pointer object-cover border-2 border-blue-500 dark:border-blue-400 transition-all duration-300 hover:ring-4 hover:ring-blue-300 dark:hover:ring-blue-700"
+              onClick={() => setOpenMenu(!openMenu)}
+            />
 
             {openMenu && (
               <div className="absolute right-0 mt-3 w-44 bg-white dark:bg-gray-900 shadow-xl ring-1 ring-black ring-opacity-5 rounded-xl border border-gray-200 dark:border-gray-700 transition-all duration-300 z-50 overflow-hidden">
@@ -108,7 +104,9 @@ const Navbar = () => {
               </div>
             )}
           </div>
-        ) : (
+        )}
+
+        {!user && (
           <Link
             to="/login"
             className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition duration-300"

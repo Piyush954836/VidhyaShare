@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
+import { supabase } from "../config/supabase"; // ✅ import supabase client
 
 const AuthContext = createContext();
 
@@ -19,6 +20,9 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
+      // 🧩 Restore Supabase session before any queries or subscriptions
+      await supabase.auth.setSession({ access_token: token });
+
       const res = await fetch(`${import.meta.env.VITE_API_URL}/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -55,10 +59,20 @@ export const AuthProvider = ({ children }) => {
       const accessToken = data.session?.access_token;
       if (!accessToken) throw new Error("No access token received");
 
+      // 🧩 Save token and restore Supabase session
       localStorage.setItem("supabase_token", accessToken);
       setToken(accessToken);
       setUser(data.user);
+
+      await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: data.session?.refresh_token || "",
+      });
+
       toast.success("Logged in successfully!");
+    } catch (err) {
+      console.error("[AuthContext] login error:", err.message);
+      toast.error(err.message || "Login failed");
     } finally {
       setLoading(false);
     }
@@ -79,17 +93,32 @@ export const AuthProvider = ({ children }) => {
       const accessToken = data.session?.access_token;
       if (!accessToken) throw new Error("No access token received");
 
+      // 🧩 Save token and restore Supabase session
       localStorage.setItem("supabase_token", accessToken);
       setToken(accessToken);
       setUser(data.user);
+
+      await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: data.session?.refresh_token || "",
+      });
+
       toast.success("Registered successfully!");
+    } catch (err) {
+      console.error("[AuthContext] register error:", err.message);
+      toast.error(err.message || "Registration failed");
     } finally {
       setLoading(false);
     }
   };
 
   // 🔹 Logout
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut(); // ✅ Clear Supabase session
+    } catch (err) {
+      console.error("[AuthContext] logout error:", err.message);
+    }
     localStorage.removeItem("supabase_token");
     setToken(null);
     setUser(null);

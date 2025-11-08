@@ -1,27 +1,15 @@
-import fs from "fs";
-import path from "path";
+// controllers/profileController.js
 import multer from "multer";
 import { supabase } from "../config/supabase.js";
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
-
-// Multer storage for avatar uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(process.cwd(), "uploads/avatars");
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const userId = req.user?.id || Date.now();
-    cb(null, `${userId}${ext}`);
-  },
-});
-
+// Use memory storage for multer (buffered upload)
+const storage = multer.memoryStorage();
 export const uploadAvatar = multer({ storage }).single("avatar");
 
-// GET profile
+// Default avatar fallback
+const DEFAULT_AVATAR = (id) => `https://i.pravatar.cc/150?u=${id}`;
+
+// GET current user profile
 export const getProfile = async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -33,10 +21,12 @@ export const getProfile = async (req, res) => {
     if (error) return res.status(400).json({ error: error.message });
     if (!data) return res.status(404).json({ error: "Profile not found" });
 
-    // Make avatar URL full
-    const avatar_url = data.avatar_url
-      ? `${BACKEND_URL}${data.avatar_url}`
-      : `https://i.pravatar.cc/150?u=${req.user.id}`;
+    // Ensure avatar_url is a full public URL
+    let avatar_url = data.avatar_url;
+    if (avatar_url && !avatar_url.startsWith("http")) {
+      avatar_url = supabase.storage.from("avatars").getPublicUrl(avatar_url).data.publicUrl;
+    }
+    avatar_url = avatar_url || DEFAULT_AVATAR(req.user.id);
 
     res.json({ ...data, avatar_url });
   } catch (err) {
@@ -45,17 +35,65 @@ export const getProfile = async (req, res) => {
   }
 };
 
-// PUT profile
+// GET profile by ID (for notifications/posts)
+export const getProfileById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, avatar_url")
+      .eq("id", id)
+      .single();
+
+    if (error) return res.status(400).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: "Profile not found" });
+
+    // Ensure avatar_url is a full public URL
+    let avatar_url = data.avatar_url;
+    if (avatar_url && !avatar_url.startsWith("http")) {
+      avatar_url = supabase.storage.from("avatars").getPublicUrl(avatar_url).data.publicUrl;
+    }
+    avatar_url = avatar_url || DEFAULT_AVATAR(id);
+
+    res.json({ id: data.id, full_name: data.full_name, avatar_url });
+  } catch (err) {
+    console.error("GET profile by ID error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 export const updateProfile = async (req, res) => {
   try {
-
-    if (!req.user?.id) return res.status(401).json({ error: "Unauthorized: no user found" });
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized: no user found" });
 
     const full_name = req.body.full_name?.trim() || null;
     const bio = req.body.bio?.trim() || null;
-
     let avatar_url = null;
-    if (req.file) avatar_url = `/uploads/avatars/${req.file.filename}`;
+
+    // Upload avatar to Supabase Storage if file exists
+    if (req.file) {
+      const fileExt = req.file.originalname.split(".").pop();
+      const fileName = `${userId}.${fileExt}`; // store directly in bucket root
+      const filePath = `avatars/${fileName}`; // <-- keep only bucket folder
+
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, req.file.buffer, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: req.file.mimetype,
+        });
+
+      if (uploadError) {
+        console.error("Supabase storage upload error:", uploadError);
+        return res.status(500).json({ error: "Avatar upload failed" });
+      }
+
+      // Save **relative path within bucket**, NOT /uploads/...
+      avatar_url = filePath;
+    }
 
     const updateData = {};
     if (full_name) updateData.full_name = full_name;
@@ -68,7 +106,7 @@ export const updateProfile = async (req, res) => {
     const { data, error } = await supabase
       .from("profiles")
       .update(updateData)
-      .eq("id", req.user.id)
+      .eq("id", userId)
       .select()
       .single();
 
@@ -76,14 +114,16 @@ export const updateProfile = async (req, res) => {
       console.error("Supabase update error:", error);
       return res.status(400).json({ error: error.message });
     }
-    if (!data) return res.status(404).json({ error: "Profile not found" });
 
-    // Make avatar URL full for frontend
-    const fullAvatarUrl = data.avatar_url ? `${BACKEND_URL}${data.avatar_url}` : null;
+    // Construct the public URL here for consistency
+    const finalAvatarUrl = data.avatar_url
+      ? `https://jwkxwvtrjivhktqovxwh.supabase.co/storage/v1/object/public/avatars/${data.avatar_url}`
+      : `https://i.pravatar.cc/150?u=${userId}`;
 
-    res.json({ ...data, avatar_url: fullAvatarUrl });
+    res.json({ ...data, avatar_url: finalAvatarUrl });
   } catch (err) {
     console.error("UPDATE profile error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 };
+

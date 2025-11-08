@@ -21,8 +21,6 @@ dotenv.config();
 
 const app = express();
 
-// ✅ Serve static uploads folder
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // ✅ Configure CORS securely
 const allowedOrigins = [
