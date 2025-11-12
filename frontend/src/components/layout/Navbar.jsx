@@ -24,14 +24,27 @@ const Navbar = () => {
 
         const profile = res.data;
         let avatarUrl;
+
         if (profile.avatar_url) {
+          // Extract filename
           const filename = profile.avatar_url.split("/").pop();
-          avatarUrl = `https://jwkxwvtrjivhktqovxwh.supabase.co/storage/v1/object/public/avatars/avatars/${filename}`;
+          
+          // Construct Base URL (Your specific bucket path)
+          const baseUrl = `https://jwkxwvtrjivhktqovxwh.supabase.co/storage/v1/object/public/avatars/avatars/${filename}`;
+          
+          // --- THE FIX: Add Cache Buster ---
+          // We append a timestamp query param. If your profile object has 'updated_at', 
+          // use: const timestamp = new Date(profile.updated_at).getTime();
+          // Otherwise, Date.now() works to force refresh on page load.
+          const timestamp = new Date().getTime(); 
+          avatarUrl = `${baseUrl}?t=${timestamp}`;
+          
         } else {
           avatarUrl = `https://i.pravatar.cc/150?u=${user.id}`;
         }
         setAvatar(avatarUrl);
       } catch (err) {
+        console.error("Error fetching avatar:", err);
         setAvatar(`https://i.pravatar.cc/150?u=${user.id}`);
       }
     };
@@ -47,7 +60,9 @@ const Navbar = () => {
   return (
     <nav className="bg-gradient-to-r from-white to-blue-50 dark:from-gray-900 dark:to-gray-800 shadow-md px-3 md:px-6 py-2 flex justify-between items-center transition-colors duration-500">
       <Link to="/" className="flex items-center gap-2">
-        <h1 className="text-lg md:text-2xl font-bold text-blue-600 dark:text-blue-400 tracking-tight">VidhyaShare Community</h1>
+        <h1 className="text-lg md:text-2xl font-bold text-blue-600 dark:text-blue-400 tracking-tight">
+          VidhyaShare Community
+        </h1>
       </Link>
       <div className="flex items-center gap-2 sm:gap-4 relative">
         <button
@@ -70,6 +85,8 @@ const Navbar = () => {
               src={avatar}
               alt={user.full_name || "Profile"}
               onError={(e) => {
+                // Prevent infinite loop if fallback also fails
+                e.target.onerror = null; 
                 e.target.src = `https://i.pravatar.cc/150?u=${user.id}`;
               }}
               className="w-8 sm:w-10 md:w-12 aspect-square rounded-full cursor-pointer object-cover border-2 border-blue-500 dark:border-blue-400 transition-all duration-300 hover:ring-4 hover:ring-blue-300 dark:hover:ring-blue-700"
