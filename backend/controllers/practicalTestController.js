@@ -41,9 +41,36 @@ const handleLevelUp = async (userId, testId) => {
   }
 };
 
+// Helper to extract metadata from ANY language (Python, JS, Java)
+const extractUniversalDetails = (details) => {
+  const signature = details.function_signature || "";
+  let className = "Solution"; // Default for Python/JS script files
+  let functionName = "";
+
+  // 1. Try to find a function name (supports 'def', 'function', 'void', etc.)
+  // Matches: "def my_func", "function myFunc", "int myFunc("
+  const fnMatch = signature.match(/(?:def|function|void|int|String|public)\s+([a-zA-Z0-9_]+)\s*\(/);
+  if (fnMatch && fnMatch[1]) {
+    functionName = fnMatch[1];
+  }
+
+  // 2. Try to find a class name (if it exists)
+  const classMatch = signature.match(/(?:class)\s+([a-zA-Z0-9_]+)/);
+  if (classMatch && classMatch[1]) {
+    className = classMatch[1];
+  }
+
+  // 3. If Python/JS, strictly require function_name. Class is optional.
+  return {
+    ...details,
+    class_name: className,
+    function_name: functionName
+  };
+};
+
 export async function gradeWithAI(prompt) {
   const apiKey = process.env.GEMINI_API_KEY;
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -419,7 +446,7 @@ export const addTest = async (req, res) => {
 
   try {
     // ✅ STEP 1: AUTOMATICALLY EXTRACT METADATA
-    const standardizedDetails = extractJavaDetails(details);
+    const standardizedDetails = extractUniversalDetails(details);
     if (!standardizedDetails.class_name || !standardizedDetails.function_name) {
       return res
         .status(400)
@@ -595,7 +622,7 @@ export const generateTestWithAI = async (req, res) => {
   // 2. Call the Gemini API
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],

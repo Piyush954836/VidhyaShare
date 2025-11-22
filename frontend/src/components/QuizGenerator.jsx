@@ -4,17 +4,61 @@ import axiosInstance from "../api/axiosInstance";
 import { toast } from "react-toastify";
 import {
   ShieldCheck,
-  Zap,
   HelpCircle,
   CheckCircle,
   XCircle,
   Award,
   Clock,
   Star,
+  AlertCircle
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
-// Main Component
+// --- 1. Helper to Shuffle Array (Fisher-Yates) ---
+const shuffleArray = (array) => {
+  if (!array) return [];
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+};
+
+// --- 2. Memoized Question Card ---
+const QuestionCard = React.memo(({ question, selectedAnswer, onSelect }) => {
+  // 🚨 CRASH FIX: Safety check
+  if (!question) {
+    return <div className="p-4 text-gray-500">Loading question...</div>;
+  }
+
+  return (
+    <div className="animate-fadeIn">
+      <div className="prose dark:prose-invert max-w-none mb-6 text-xl font-semibold select-none">
+        <ReactMarkdown>{question.question || "Question text missing"}</ReactMarkdown>
+      </div>
+      <div className="space-y-3">
+        {question.options && question.options.map((option, index) => (
+          <button
+            key={index}
+            onClick={() => onSelect(option)}
+            className={`w-full text-left p-4 rounded-lg border-2 transition-all duration-200 ${
+              selectedAnswer === option
+                ? "bg-indigo-500 border-indigo-500 text-white font-bold shadow-md transform scale-[1.01]"
+                : "bg-gray-100 dark:bg-gray-700 border-transparent hover:border-indigo-400 hover:bg-gray-200 dark:hover:bg-gray-600"
+            }`}
+          >
+            <ReactMarkdown components={{ p: React.Fragment }}>
+              {option}
+            </ReactMarkdown>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+// --- Main Component ---
 export default function QuizGenerator({
   skill,
   context,
@@ -27,19 +71,17 @@ export default function QuizGenerator({
   const [error, setError] = useState("");
   const [pointsEarned, setPointsEarned] = useState(0);
 
-  // ✨ This useEffect is now fully dynamic ✨
   useEffect(() => {
     const generateQuiz = async () => {
       try {
         let url;
         let payload;
 
-        // Determine which API endpoint and payload to use based on context
         if (context?.type === "teacher_verification" && context.topicId) {
           url = `/quiz/topic/${context.topicId}/start-verification`;
-          payload = {}; // No body needed, ID is in URL
+          payload = {};
         } else {
-          url = "/quiz/generate-student-quiz"; // Use the dedicated route for students
+          url = "/quiz/generate-student-quiz";
           payload = { skill: skill.name, level: skill.level };
         }
 
@@ -48,7 +90,13 @@ export default function QuizGenerator({
         });
 
         if (response.data && response.data.length > 0) {
-          setQuizData(response.data);
+          const processedData = response.data.map((q) => ({
+            ...q,
+            options: shuffleArray(q.options),
+            timer: q.timer || 45,
+          }));
+
+          setQuizData(processedData);
           setGameState("quiz");
         } else {
           throw new Error("AI returned an empty or invalid quiz.");
@@ -66,7 +114,6 @@ export default function QuizGenerator({
     generateQuiz();
   }, [skill, context, token]);
 
-  // ✨ This submit handler is now fully dynamic ✨
   const handleQuizSubmit = async (finalScore, totalQuestions, userAnswers) => {
     try {
       let payload = { score: finalScore, totalQuestions };
@@ -81,10 +128,12 @@ export default function QuizGenerator({
         headers: { Authorization: `Bearer ${token}` },
       });
 
+      // Map answers for results view
       const finalQuizData = quizData.map((q, i) => ({
         ...q,
-        userAnswer: userAnswers[i],
+        userAnswer: userAnswers[i] || null, // Ensure undefined becomes null
       }));
+      
       setQuizData(finalQuizData);
       setPointsEarned(response.data.pointsGranted || 0);
 
@@ -97,10 +146,10 @@ export default function QuizGenerator({
     } catch (err) {
       console.error("Failed to save quiz result:", err);
       toast.error(err.response?.data?.error || "Could not save your score.");
-      // Still show results even if saving fails
+      
       const finalQuizData = quizData.map((q, i) => ({
         ...q,
-        userAnswer: userAnswers[i],
+        userAnswer: userAnswers[i] || null,
       }));
       setQuizData(finalQuizData);
       setGameState("results");
@@ -134,7 +183,7 @@ export default function QuizGenerator({
         {gameState === "error" && (
           <ErrorState message={error} onClose={onClose} />
         )}
-        {gameState === "quiz" && (
+        {gameState === "quiz" && quizData && (
           <QuizView quizData={quizData} onQuizSubmit={handleQuizSubmit} />
         )}
         {gameState === "results" && (
@@ -149,7 +198,7 @@ export default function QuizGenerator({
   );
 }
 
-// --- Sub-Components (These are complete and don't need further changes) ---
+// --- Sub-Components ---
 
 const LoadingState = () => (
   <div className="text-center p-8">
@@ -181,12 +230,18 @@ const QuizView = ({ quizData, onQuizSubmit }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(quizData[0]?.timer || 30);
+
+  // Safety check: ensure data exists
+  if (!quizData || quizData.length === 0) return <ErrorState message="No questions available" />;
+  
   const currentQuestion = quizData[currentQuestionIndex];
 
   const handleSubmit = useCallback(() => {
     let score = 0;
     quizData.forEach((q, index) => {
-      if (selectedAnswers[index] === q.answer) score++;
+      // Logic: If unmarked (undefined), it is NOT equal to answer, so no point added.
+      const userAnswer = selectedAnswers[index];
+      if (userAnswer && userAnswer === q.answer) score++;
     });
     onQuizSubmit(score, quizData.length, selectedAnswers);
   }, [quizData, selectedAnswers, onQuizSubmit]);
@@ -199,10 +254,14 @@ const QuizView = ({ quizData, onQuizSubmit }) => {
     }
   }, [currentQuestionIndex, quizData.length, handleSubmit]);
 
+  // Update timer when question changes
   useEffect(() => {
-    setTimeLeft(quizData[currentQuestionIndex].timer);
-  }, [currentQuestionIndex, quizData]);
+    if (currentQuestion) {
+      setTimeLeft(currentQuestion.timer || 30);
+    }
+  }, [currentQuestionIndex, currentQuestion]);
 
+  // Timer Interval
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -217,9 +276,9 @@ const QuizView = ({ quizData, onQuizSubmit }) => {
     return () => clearInterval(timer);
   }, [currentQuestionIndex, handleNext]);
 
-  const handleSelectAnswer = (option) => {
+  const handleSelectAnswer = useCallback((option) => {
     setSelectedAnswers((prev) => ({ ...prev, [currentQuestionIndex]: option }));
-  };
+  }, [currentQuestionIndex]);
 
   return (
     <div>
@@ -228,31 +287,23 @@ const QuizView = ({ quizData, onQuizSubmit }) => {
           <HelpCircle className="w-5 h-5 text-indigo-400" />
           Question {currentQuestionIndex + 1} of {quizData.length}
         </div>
-        <div className="flex items-center gap-2 font-semibold bg-red-100 dark:bg-red-800/50 text-red-700 dark:text-red-300 px-3 py-1 rounded-full">
+        <div className={`flex items-center gap-2 font-semibold px-3 py-1 rounded-full transition-colors duration-300 ${
+            timeLeft <= 10 ? "bg-red-100 text-red-700 animate-pulse" : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+        }`}>
           <Clock className="w-5 h-5" />
           Time Left: {timeLeft}s
         </div>
       </div>
-      <div className="prose dark:prose-invert max-w-none mb-6 text-xl font-semibold">
-        <ReactMarkdown>{currentQuestion.question}</ReactMarkdown>
-      </div>
-      <div className="space-y-3">
-        {currentQuestion.options.map((option, index) => (
-          <button
-            key={index}
-            onClick={() => handleSelectAnswer(option)}
-            className={`w-full text-left p-4 rounded-lg border-2 transition-all duration-200 ${
-              selectedAnswers[currentQuestionIndex] === option
-                ? "bg-indigo-500 border-indigo-500 text-white font-bold"
-                : "bg-gray-100 dark:bg-gray-700 border-transparent hover:border-indigo-400"
-            }`}
-          >
-            <ReactMarkdown components={{ p: React.Fragment }}>
-              {option}
-            </ReactMarkdown>
-          </button>
-        ))}
-      </div>
+
+      {/* Render Question Card safely */}
+      {currentQuestion && (
+        <QuestionCard
+          question={currentQuestion}
+          selectedAnswer={selectedAnswers[currentQuestionIndex]}
+          onSelect={handleSelectAnswer}
+        />
+      )}
+
       <div className="mt-8 flex justify-end">
         <button
           onClick={handleNext}
@@ -274,7 +325,7 @@ const ResultsView = ({ quizData, onFinish, pointsEarned }) => {
   const passed = percentage >= 60;
 
   return (
-    <div className="text-center p-6">
+    <div className="text-center p-6 animate-fadeIn">
       <Award
         className={`w-20 h-20 mx-auto mb-4 ${
           passed ? "text-green-500" : "text-red-500"
@@ -302,6 +353,7 @@ const ResultsView = ({ quizData, onFinish, pointsEarned }) => {
               <ReactMarkdown>{`${index + 1}. ${q.question}`}</ReactMarkdown>
             </div>
             <div className="flex items-start mt-2">
+              {/* Logic for Icons: Correct vs Wrong vs Unanswered */}
               {q.userAnswer === q.answer ? (
                 <CheckCircle className="w-5 h-5 text-green-500 mr-2 flex-shrink-0" />
               ) : (
@@ -310,10 +362,9 @@ const ResultsView = ({ quizData, onFinish, pointsEarned }) => {
               <div className="flex-1">
                 <p>
                   Your answer:{" "}
-                  <span className="font-medium">
-                    {q.userAnswer || "Not answered"}
+                  <span className={`font-medium ${!q.userAnswer ? "text-orange-500 italic" : ""}`}>
+                    {q.userAnswer || "Skipped / Time Expired"}
                   </span>
-                  .
                 </p>
                 <p>
                   Correct:{" "}

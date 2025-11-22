@@ -6,7 +6,7 @@ import axiosInstance from "../api/axiosInstance";
 import { toast } from "react-toastify";
 import { Zap, BookOpen } from "lucide-react";
 
-// Sub-components (Ensure these are imported from your correct folder structure)
+// Sub-components
 import QuizGenerator from "../components/QuizGenerator";
 import PracticalTestModal from "../components/PracticalTestModal";
 import LiveSession from "./LiveSession";
@@ -15,6 +15,7 @@ import ProfileHeader from "../components/profile/ProfileHeader";
 import EditProfileForm from "../components/profile/EditProfileForm";
 import SkillsTab from "../components/profile/SkillsTab";
 import TeachingTab from "../components/profile/TeachingTab";
+import CreateCourseModal from "../components/profile/CreateCourseModal";
 
 const Profile = () => {
   const { user, token, refreshUser } = useAuth();
@@ -34,6 +35,7 @@ const Profile = () => {
   // Quiz/Test Modal State
   const [isQuizOpen, setIsQuizOpen] = useState(false);
   const [selectedSkillForQuiz, setSelectedSkillForQuiz] = useState(null);
+  const [quizContext, setQuizContext] = useState(null); // ✨ NEW: To handle teacher vs student quiz
   const [isTestOpen, setIsTestOpen] = useState(false);
   const [selectedSkillForTest, setSelectedSkillForTest] = useState(null);
 
@@ -63,25 +65,16 @@ const Profile = () => {
       const profile = profileRes.data || {};
       let profilePicUrl;
 
-      // --- UPDATED LOGIC WITH CACHE BUSTING ---
       if (profile.avatar_url) {
-        // 1. Extract filename
         const filename = profile.avatar_url.split("/").pop();
-        
-        // 2. Construct Base URL (Your specific bucket path)
         const baseUrl = `https://jwkxwvtrjivhktqovxwh.supabase.co/storage/v1/object/public/avatars/avatars/${filename}`;
-        
-        // 3. Add Cache Buster
-        // Use 'updated_at' from DB if available, otherwise use current time to force refresh
         const timestamp = profile.updated_at 
             ? new Date(profile.updated_at).getTime() 
             : new Date().getTime();
-            
         profilePicUrl = `${baseUrl}?t=${timestamp}`;
       } else {
         profilePicUrl = `https://i.pravatar.cc/150?u=${user.id}`;
       }
-      // ----------------------------------------
 
       setName(profile.full_name?.trim() || "User");
       setBio(profile.bio?.trim() || "");
@@ -112,24 +105,25 @@ const Profile = () => {
     }
   }, [user, token]);
 
-  // Fetch topics when course is selected
-  useEffect(() => {
-    async function fetchTopics() {
-      if (!selectedCourse || !token) return;
-      setIsLoadingTopics(true);
-      try {
-        const res = await axiosInstance.get(
-          `/courses/${selectedCourse.id}/topics`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        setTopics(res.data || []);
-      } catch {
-        toast.error("Could not load topics");
-      }
-      setIsLoadingTopics(false);
+  // Helper to fetch topics (extracted for re-use)
+  const fetchTopics = useCallback(async () => {
+    if (!selectedCourse || !token) return;
+    setIsLoadingTopics(true);
+    try {
+      const res = await axiosInstance.get(
+        `/courses/${selectedCourse.id}/topics`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setTopics(res.data || []);
+    } catch {
+      toast.error("Could not load topics");
     }
-    if (selectedCourse) fetchTopics();
+    setIsLoadingTopics(false);
   }, [selectedCourse, token]);
+
+  useEffect(() => {
+    if (selectedCourse) fetchTopics();
+  }, [selectedCourse, fetchTopics]);
 
   // Fetch sessions per topic
   const fetchTopicSessions = useCallback(async () => {
@@ -185,28 +179,56 @@ const Profile = () => {
       toast.success("Profile updated successfully!");
       setEditing(false);
       refreshUser();
-      
-      // Re-fetch profile data to see the new image immediately
       fetchProfileData(); 
-      
     } catch (err) {
-      toast.error(
-        "Failed to update profile: " + (err.response?.data?.error || err.message)
-      );
+      toast.error("Failed to update profile: " + (err.response?.data?.error || err.message));
     } finally {
       setUploading(false);
     }
   };
 
+  // -- Student Verification --
   const handleStartVerification = (skill) => {
     setIsQuizOpen(true);
     setSelectedSkillForQuiz(skill);
+    setQuizContext(null); // Normal student mode
+  };
+
+  // -- ✨ Teacher Verification --
+  const handleVerifyTopic = (topic) => {
+    // We use the existing Skill object structure but flag it for teacher mode
+    // We pass the topic name as the "Skill Name" for the quiz generator
+    const tempSkillObj = { name: topic.title, level: "Intermediate" }; 
+    setIsQuizOpen(true);
+    setSelectedSkillForQuiz(tempSkillObj);
+    setQuizContext({ type: "teacher_verification", topicId: topic.id });
   };
 
   const handleQuizCompletion = () => {
     setIsQuizOpen(false);
     setSelectedSkillForQuiz(null);
-    fetchProfileData();
+    setQuizContext(null);
+    // If we were verifying a topic, refresh the topic list to show the green check
+    if (selectedCourse) {
+        fetchTopics();
+    } else {
+        fetchProfileData(); // Student mode refresh
+    }
+  };
+
+  // -- ✨ Finalize Course --
+  const handleFinalizeCourse = async (courseId) => {
+    try {
+        const res = await axiosInstance.post(`/courses/${courseId}/verify`, {}, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        toast.success(res.data.message);
+        // Refresh course list to update status to "Verified"
+        fetchCourses();
+        setSelectedCourse(null); // Go back to list
+    } catch (error) {
+        toast.error(error.response?.data?.error || "Failed to verify course");
+    }
   };
 
   const handleStartTest = (skill) => {
@@ -238,23 +260,27 @@ const Profile = () => {
           onClose={() => setActiveSession(null)}
         />
       )}
-      {/* Ensure you import CreateCourseModal if it exists in your components folder */}
+
       {isCreateCourseOpen && (
-         // Placeholder for CreateCourseModal component
-         <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
-             <div className="bg-white p-4 rounded">
-                 <p>Create Course Modal Placeholder</p>
-                 <button onClick={() => setIsCreateCourseOpen(false)}>Close</button>
-             </div>
-         </div>
+        <CreateCourseModal 
+          availableSkills={skills}
+          onClose={() => setIsCreateCourseOpen(false)}
+          onCourseCreated={() => {
+            setIsCreateCourseOpen(false);
+            fetchCourses();
+          }}
+        />
       )}
+
       {isQuizOpen && selectedSkillForQuiz && (
         <QuizGenerator
           skill={selectedSkillForQuiz}
+          context={quizContext} // Pass the context here
           onClose={() => setIsQuizOpen(false)}
           onVerificationComplete={handleQuizCompletion}
         />
       )}
+      
       {isTestOpen && selectedSkillForTest && (
         <PracticalTestModal
           userSkill={selectedSkillForTest}
@@ -262,6 +288,7 @@ const Profile = () => {
           onTestComplete={handleTestCompletion}
         />
       )}
+      
       {sessionModal && (
         <ScheduleSessionModal
           topicId={sessionModal.topicId}
@@ -348,6 +375,9 @@ const Profile = () => {
                       onSelectCourse={setSelectedCourse}
                       onClearCourse={() => setSelectedCourse(null)}
                       onCreateCourse={() => setIsCreateCourseOpen(true)}
+                      onRefreshTopics={fetchTopics} // ✨ Pass the refresher
+                      onVerifyTopic={handleVerifyTopic} // ✨ Pass the topic verifier
+                      onFinalizeCourse={handleFinalizeCourse} // ✨ Pass the course finalizer
                       onScheduleSession={(topic) =>
                         setSessionModal({ topicId: topic.id, topicTitle: topic.title })
                       }
