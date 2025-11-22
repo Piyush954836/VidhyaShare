@@ -1,4 +1,4 @@
-const generateWrapperCode = (language_id, solution, details) => {
+export const generateWrapperCode = (language_id, solution, details) => {
   const { class_name, function_name } = details;
 
   switch (language_id) {
@@ -301,5 +301,3 @@ int main() { std::cout << "C++ requires specific types" << std::endl; return 0; 
       throw new Error(`Unsupported language ID: ${language_id}`);
   }
 };
-
-module.exports = { generateWrapperCode };
